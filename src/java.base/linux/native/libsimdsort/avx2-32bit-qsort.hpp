@@ -175,13 +175,110 @@ struct avx2_vector<int32_t> {
     }
     static reg_t cast_from(__m256i v) { return v; }
     static __m256i cast_to(reg_t v) { return v; }
+    template <bool masked = true>
     static int double_compressstore(type_t *left_addr, type_t *right_addr,
                                     opmask_t k, reg_t reg) {
-        return avx2_double_compressstore32<type_t>(left_addr, right_addr, k,
-                                                   reg);
+        return avx2_double_compressstore32<type_t, masked>(left_addr,
+                                                           right_addr, k, reg);
     }
 };
+template <>
+struct avx2_vector<uint32_t> {
+    using type_t = uint32_t;
+    using reg_t = __m256i;
+    using ymmi_t = __m256i;
+    using opmask_t = __m256i;
+    static const uint8_t numlanes = 8;
+#ifdef XSS_MINIMAL_NETWORK_SORT
+    static constexpr int network_sort_threshold = numlanes;
+#else
+    static constexpr int network_sort_threshold = 256;
+#endif
+    static constexpr int partition_unroll_factor = 4;
 
+    using swizzle_ops = avx2_32bit_swizzle_ops;
+
+    static type_t type_max() { return X86_SIMD_SORT_MAX_UINT32; }
+    static type_t type_min() { return 0; }
+    static reg_t zmm_max() { return _mm256_set1_epi32(type_max()); }
+    static opmask_t get_partial_loadmask(uint64_t num_to_read) {
+        auto mask = ((0x1ull << num_to_read) - 0x1ull);
+        return convert_int_to_avx2_mask(mask);
+    }
+    static ymmi_t seti(int v1, int v2, int v3, int v4, int v5, int v6, int v7,
+                       int v8) {
+        return _mm256_set_epi32(v1, v2, v3, v4, v5, v6, v7, v8);
+    }
+    template <int scale>
+    static reg_t mask_i64gather(reg_t src, opmask_t mask, __m256i index,
+                                void const *base) {
+        return _mm256_mask_i32gather_epi32(src, base, index, mask, scale);
+    }
+    template <int scale>
+    static reg_t i64gather(__m256i index, void const *base) {
+        return _mm256_i32gather_epi32((int const *)base, index, scale);
+    }
+    static opmask_t ge(reg_t x, reg_t y) {
+        reg_t maxi = max(x, y);
+        return eq(maxi, x);
+    }
+    static opmask_t eq(reg_t x, reg_t y) { return _mm256_cmpeq_epi32(x, y); }
+    static reg_t loadu(void const *mem) {
+        return _mm256_loadu_si256((reg_t const *)mem);
+    }
+    static reg_t max(reg_t x, reg_t y) { return _mm256_max_epu32(x, y); }
+    static void mask_compressstoreu(void *mem, opmask_t mask, reg_t x) {
+        return avx2_emu_mask_compressstoreu32<type_t>(mem, mask, x);
+    }
+    static reg_t mask_loadu(reg_t x, opmask_t mask, void const *mem) {
+        reg_t dst = _mm256_maskload_epi32((const int *)mem, mask);
+        return mask_mov(x, mask, dst);
+    }
+    static reg_t mask_mov(reg_t x, opmask_t mask, reg_t y) {
+        return _mm256_castps_si256(_mm256_blendv_ps(_mm256_castsi256_ps(x),
+                                                    _mm256_castsi256_ps(y),
+                                                    _mm256_castsi256_ps(mask)));
+    }
+    static void mask_storeu(void *mem, opmask_t mask, reg_t x) {
+        return _mm256_maskstore_epi32((int *)mem, mask, x);
+    }
+    static reg_t min(reg_t x, reg_t y) { return _mm256_min_epu32(x, y); }
+    static reg_t permutexvar(__m256i idx, reg_t ymm) {
+        return _mm256_permutevar8x32_epi32(ymm, idx);
+    }
+    static reg_t permutevar(reg_t ymm, __m256i idx) {
+        return _mm256_permutevar8x32_epi32(ymm, idx);
+    }
+    static reg_t reverse(reg_t ymm) {
+        const __m256i rev_index = _mm256_set_epi32(NETWORK_32BIT_AVX2_2);
+        return permutexvar(rev_index, ymm);
+    }
+    static type_t reducemax(reg_t v) {
+        return avx2_emu_reduce_max32<type_t>(v);
+    }
+    static type_t reducemin(reg_t v) {
+        return avx2_emu_reduce_min32<type_t>(v);
+    }
+    static reg_t set1(type_t v) { return _mm256_set1_epi32(v); }
+    template <uint8_t mask>
+    static reg_t shuffle(reg_t ymm) {
+        return _mm256_shuffle_epi32(ymm, mask);
+    }
+    static void storeu(void *mem, reg_t x) {
+        _mm256_storeu_si256((__m256i *)mem, x);
+    }
+    static reg_t sort_vec(reg_t x) {
+        return sort_ymm_32bit<avx2_vector<type_t>>(x);
+    }
+    static reg_t cast_from(__m256i v) { return v; }
+    static __m256i cast_to(reg_t v) { return v; }
+    template <bool masked = true>
+    static int double_compressstore(type_t *left_addr, type_t *right_addr,
+                                    opmask_t k, reg_t reg) {
+        return avx2_double_compressstore32<type_t, masked>(left_addr,
+                                                           right_addr, k, reg);
+    }
+};
 template <>
 struct avx2_vector<float> {
     using type_t = float;
@@ -293,10 +390,11 @@ struct avx2_vector<float> {
     }
     static reg_t cast_from(__m256i v) { return _mm256_castsi256_ps(v); }
     static __m256i cast_to(reg_t v) { return _mm256_castps_si256(v); }
+    template <bool masked = true>
     static int double_compressstore(type_t *left_addr, type_t *right_addr,
                                     opmask_t k, reg_t reg) {
-        return avx2_double_compressstore32<type_t>(left_addr, right_addr, k,
-                                                   reg);
+        return avx2_double_compressstore32<type_t, masked>(left_addr,
+                                                           right_addr, k, reg);
     }
 };
 

@@ -116,20 +116,29 @@ int avx512_double_compressstore(type_t *left_addr, type_t *right_addr,
 }
 
 // Generic function dispatches to AVX2 or AVX512 code
-template <typename vtype, typename type_t,
+template <typename vtype, bool masked = true, typename type_t,
           typename reg_t = typename vtype::reg_t>
 X86_SIMD_SORT_INLINE arrsize_t partition_vec(type_t *l_store, type_t *r_store,
                                              const reg_t curr_vec,
                                              const reg_t pivot_vec,
                                              reg_t &smallest_vec,
                                              reg_t &biggest_vec, bool use_gt) {
-    //typename vtype::opmask_t ge_mask = vtype::ge(curr_vec, pivot_vec);
-    typename vtype::opmask_t mask;
-    if (use_gt) mask = vtype::gt(curr_vec, pivot_vec);
-    else mask = vtype::ge(curr_vec, pivot_vec);
+    // typename vtype::opmask_t ge_mask = vtype::ge(curr_vec, pivot_vec);
+    typename vtype::opmask_t ge_mask;
+    int amount_ge_pivot;
+    if (use_gt)
+        ge_mask = vtype::gt(curr_vec, pivot_vec);
+    else
+        ge_mask = vtype::ge(curr_vec, pivot_vec);
 
-    int amount_ge_pivot =
-        vtype::double_compressstore(l_store, r_store, mask, curr_vec);
+    // amount_ge_pivot =
+    //     vtype::double_compressstore(l_store, r_store, ge_mask, curr_vec);
+    if constexpr (sizeof(reg_t) == 64)
+        amount_ge_pivot =
+            vtype::double_compressstore(l_store, r_store, ge_mask, curr_vec);
+    else
+        amount_ge_pivot = vtype::template double_compressstore<masked>(
+            l_store, r_store, ge_mask, curr_vec);
 
     smallest_vec = vtype::min(curr_vec, smallest_vec);
     biggest_vec = vtype::max(curr_vec, biggest_vec);
@@ -332,7 +341,7 @@ partition_avx512_unrolled(type_t *arr, arrsize_t left, arrsize_t right,
          * */
         X86_SIMD_SORT_UNROLL_LOOP(8)
         for (int ii = 0; ii < num_unroll; ++ii) {
-            arrsize_t amount_ge_pivot = partition_vec<vtype>(
+            arrsize_t amount_ge_pivot = partition_vec<vtype, false>(
                 arr + l_store, arr + l_store + unpartitioned, curr_vec[ii],
                 pivot_vec, min_vec, max_vec, use_gt);
             l_store += (vtype::numlanes - amount_ge_pivot);

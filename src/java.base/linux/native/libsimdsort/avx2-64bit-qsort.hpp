@@ -32,15 +32,6 @@
 #include "xss-common-qsort.h"
 
 /*
- * Constants used in sorting 8 elements in a ymm registers. Based on Bitonic
- * sorting network (see
- * https://en.wikipedia.org/wiki/Bitonic_sorter#/media/File:BitonicSort.svg)
- */
-// ymm                  3, 2, 1, 0
-#define NETWORK_64BIT_R 0, 1, 2, 3
-#define NETWORK_64BIT_1 1, 0, 3, 2
-
-/*
  * Assumes ymm is random and performs a full sorting network defined in
  * https://en.wikipedia.org/wiki/Bitonic_sorter#/media/File:BitonicSort.svg
  */
@@ -115,10 +106,11 @@ struct avx2_vector<int64_t> {
     static void mask_compressstoreu(void *mem, opmask_t mask, reg_t x) {
         return avx2_emu_mask_compressstoreu64<type_t>(mem, mask, x);
     }
+    template <bool masked = true>
     static int32_t double_compressstore(void *left_addr, void *right_addr,
                                         opmask_t k, reg_t reg) {
-        return avx2_double_compressstore64<type_t>(left_addr, right_addr, k,
-                                                   reg);
+        return avx2_double_compressstore64<type_t, masked>(left_addr,
+                                                           right_addr, k, reg);
     }
     static reg_t maskz_loadu(opmask_t mask, void const *mem) {
         return _mm256_maskload_epi64((const long long int *)mem, mask);
@@ -169,7 +161,6 @@ struct avx2_vector<int64_t> {
     static reg_t cast_from(__m256i v) { return v; }
     static __m256i cast_to(reg_t v) { return v; }
 };
-
 template <>
 struct avx2_vector<double> {
     using type_t = double;
@@ -238,10 +229,11 @@ struct avx2_vector<double> {
     static void mask_compressstoreu(void *mem, opmask_t mask, reg_t x) {
         return avx2_emu_mask_compressstoreu64<type_t>(mem, mask, x);
     }
+    template <bool masked = true>
     static int32_t double_compressstore(void *left_addr, void *right_addr,
                                         opmask_t k, reg_t reg) {
-        return avx2_double_compressstore64<type_t>(left_addr, right_addr, k,
-                                                   reg);
+        return avx2_double_compressstore64<type_t, masked>(left_addr,
+                                                           right_addr, k, reg);
     }
     static reg_t mask_loadu(reg_t x, opmask_t mask, void const *mem) {
         reg_t dst = _mm256_maskload_pd((type_t *)mem, mask);

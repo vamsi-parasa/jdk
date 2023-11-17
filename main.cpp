@@ -19,7 +19,7 @@ void print(vector<int64_t> &array, string msg) {
 int main() {
 
     int64_t pivot = 4;
-    vector<int64_t> array1 {4, -2, 13, 9}; //, 3, -4, 7, -8, 9, -10};
+    vector<int64_t> array1 {4, 2, -13, -9}; //, 3, -4, 7, -8, 9, -10};
     vector<int64_t> array2 {4, -5, 7, -1, 3, -4, 2, -8};
     vector<int64_t> array = array1;
     print(array, "before part");

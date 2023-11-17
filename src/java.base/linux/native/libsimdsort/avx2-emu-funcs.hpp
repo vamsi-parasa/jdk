@@ -265,28 +265,28 @@ int avx2_double_compressstore32(void *left_addr, void *right_addr,
     return _mm_popcnt_u32(shortMask);
 }
 
-template <typename T>
-static void printm(T *arr, std::string msg) {
-    std::cout << msg << ": {";
-    for (int i = 0; i < 4; i ++) std::cout << arr[i] << ", ";
-    std::cout << "}" << std::endl;
-}
+// template <typename T>
+// static void printm(T *arr, std::string msg) {
+//     std::cout << msg << ": {";
+//     for (int i = 0; i < 4; i ++) std::cout << arr[i] << ", ";
+//     std::cout << "}" << std::endl;
+// }
 
 template <typename T, bool masked = true>
 int32_t avx2_double_compressstore64(void *left_addr, void *right_addr,
                                     typename avx2_vector<T>::opmask_t k,
                                     typename avx2_vector<T>::reg_t reg) {
-    using vtype = avx2_vector<T>;
-    const __m256i oxff = _mm256_set1_epi32(0xFFFFFFFF);
+    // using vtype = avx2_vector<T>;
+    // const __m256i oxff = _mm256_set1_epi32(0xFFFFFFFF);
 
-    T *leftStore = (T *)left_addr;
-    T *rightStore = (T *)right_addr;
+    // T *leftStore = (T *)left_addr;
+    // T *rightStore = (T *)right_addr;
 
     int32_t shortMask = convert_avx2_mask_to_int_64bit(k);
-    std::bitset<8> x(shortMask);
-    std::cout << "; mask = " << shortMask << " (" << x << std::endl;
-    printm(leftStore, "%%%%%%%% \n leftStore:Before>");
-    printm(rightStore, "rightStore:Before>");
+    // std::bitset<8> x(shortMask);
+    // std::cout << "; mask = " << shortMask << " (" << x << std::endl;
+    // printm(leftStore, "%%%%%%%% \n leftStore:Before>");
+    // printm(rightStore, "rightStore:Before>");
 
     // const __m256i &perm = _mm256_loadu_si256(
     //     (const __m256i *)avx2_compressstore_lut64_perm[shortMask].data());
@@ -305,33 +305,35 @@ int32_t avx2_double_compressstore64(void *left_addr, void *right_addr,
     //     vtype::storeu(rightStore, temp);
     // }
     if (shortMask == 0) return 0;
+    T *leftStore = (T *)left_addr;
+    T *rightStore = (T *)right_addr;
 
-    T scratch[4];
-    std::copy(leftStore, leftStore+4, scratch);
-    int rgt = 3;
+    int num_lanes = 4;
+    T scratch[num_lanes];
+    std::copy(leftStore, leftStore + num_lanes, scratch);
+    int rgt = num_lanes;
     int lft = 0;
-    printm(scratch, "scratch:");
+    //printm(scratch, "scratch:");
     uint32_t msk = shortMask;
     
-    for (int i=0; i <4; i++) {
-        std::bitset<8> xx(msk);
+    for (int i = 0; i < num_lanes; i++) {
         
         uint bit = msk & 1;
-        std::cout << "msk=" << xx << "; bit=" << bit << std::endl;
+        // std::bitset<8> xx(msk);
+        // std::cout << "msk=" << xx << "; bit=" << bit << std::endl;
         if(bit == 1) {
-            leftStore[rgt--] = scratch[i];
+            leftStore[--rgt] = scratch[i];
         }
         else {
             leftStore[lft++] = scratch[i];
         }
         msk = msk >> 1;
     }
-    std::copy(leftStore, leftStore+4, rightStore);
+    std::copy(leftStore, leftStore + num_lanes, rightStore);
     
-    printm(leftStore, "******* \n leftStore:After>");
-    printm(rightStore, "rightStore:After>");
-    
-    std::cout << "**** hello partition = " << _mm_popcnt_u32(shortMask) << std::endl;
+    // printm(leftStore, "******* \n leftStore:After>");
+    // printm(rightStore, "rightStore:After>");
+    // std::cout << "**** hello partition = " << _mm_popcnt_u32(shortMask) << std::endl;
     return _mm_popcnt_u32(shortMask);
 }
 

@@ -627,7 +627,7 @@ template <typename vtype, typename T>
 X86_SIMD_SORT_INLINE void simd_dual_pivot_partition(T *arr, int64_t from_index, int64_t to_index, int32_t *pivot_indices, int64_t index_pivot1, int64_t index_pivot2){
 
     
-    if (is_mostly_sorted(arr, from_index, to_index)) return partitionDualPivot(arr, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
+    //if (is_mostly_sorted(arr, from_index, to_index)) return partitionDualPivot(arr, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
 
     const T pivot1 = arr[index_pivot1];
     const T pivot2 = arr[index_pivot2];
@@ -664,7 +664,7 @@ X86_SIMD_SORT_INLINE void simd_dual_pivot_partition(T *arr, int64_t from_index, 
 template <typename vtype, typename T>
 X86_SIMD_SORT_INLINE void simd_single_pivot_partition(T *arr, int64_t from_index, int64_t to_index, int32_t *pivot_indices, int64_t index_pivot) {
     
-    if (is_mostly_sorted(arr, from_index, to_index)) return partitionSinglePivot(arr, from_index, to_index, pivot_indices, index_pivot);
+    //if (is_mostly_sorted(arr, from_index, to_index)) return partitionSinglePivot(arr, from_index, to_index, pivot_indices, index_pivot);
 
     const T pivot = arr[index_pivot];
 
@@ -717,11 +717,6 @@ X86_SIMD_SORT_INLINE void simd_fast_sort(T *arr, arrsize_t from_index, arrsize_t
     }
 }
 
-template <typename vtype, typename T>
-X86_SIMD_SORT_INLINE void simd_partition(T *arr, int64_t from_index, int64_t to_index, T pivot)
-{
-    vectorized_partition<vtype, T>(arr, from_index, to_index, pivot, false);
-}
 
 #define DEFINE_METHODS(ISA, VTYPE) \
     template <typename T> \
@@ -744,6 +739,6 @@ X86_SIMD_SORT_INLINE void simd_partition(T *arr, int64_t from_index, int64_t to_
     }
 
 DEFINE_METHODS(avx2, avx2_vector<T>)
-//DEFINE_METHODS(avx512, zmm_vector<T>)
+DEFINE_METHODS(avx512, zmm_vector<T>)
 
 #endif  // XSS_COMMON_QSORT

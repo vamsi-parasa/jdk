@@ -46,7 +46,7 @@ extern "C" {
                 avx2_fast_sort((float*)array, from_index, to_index, INSERTION_SORT_THRESHOLD_32BIT);
                 break;
             case JVM_T_DOUBLE:
-                avx2_fast_sort((int64_t*)array, from_index, to_index, INSERTION_SORT_THRESHOLD_64BIT);
+                avx2_fast_sort((double*)array, from_index, to_index, INSERTION_SORT_THRESHOLD_64BIT);
                 break;
         }
     }
@@ -63,7 +63,7 @@ extern "C" {
                 avx2_fast_partition((float*)array, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
                 break;
             case JVM_T_DOUBLE:
-                avx2_fast_partition((int64_t*)array, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
+                avx2_fast_partition((double*)array, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
                 break;
         }
     }

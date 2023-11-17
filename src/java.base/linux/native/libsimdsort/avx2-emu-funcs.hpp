@@ -30,7 +30,8 @@
 
 #include <array>
 #include <utility>
-#include <cstdlib>
+#include <iostream>
+#include <bitset>
 
 #include "xss-common-qsort.h"
 
@@ -264,6 +265,13 @@ int avx2_double_compressstore32(void *left_addr, void *right_addr,
     return _mm_popcnt_u32(shortMask);
 }
 
+template <typename T>
+static void printm(T *arr, std::string msg) {
+    std::cout << msg << ": {";
+    for (int i = 0; i < 4; i ++) std::cout << arr[i] << ", ";
+    std::cout << "}" << std::endl;
+}
+
 template <typename T, bool masked = true>
 int32_t avx2_double_compressstore64(void *left_addr, void *right_addr,
                                     typename avx2_vector<T>::opmask_t k,
@@ -275,25 +283,59 @@ int32_t avx2_double_compressstore64(void *left_addr, void *right_addr,
     T *rightStore = (T *)right_addr;
 
     int32_t shortMask = convert_avx2_mask_to_int_64bit(k);
-    const __m256i &perm = _mm256_loadu_si256(
-        (const __m256i *)avx2_compressstore_lut64_perm[shortMask].data());
+    std::bitset<8> x(shortMask);
+    std::cout << "; mask = " << shortMask << " (" << x << std::endl;
+    printm(leftStore, "%%%%%%%% \n leftStore:Before>");
+    printm(rightStore, "rightStore:Before>");
 
-    typename vtype::reg_t temp = vtype::cast_from(
-        _mm256_permutevar8x32_epi32(vtype::cast_to(reg), perm));
+    // const __m256i &perm = _mm256_loadu_si256(
+    //     (const __m256i *)avx2_compressstore_lut64_perm[shortMask].data());
+
+    // typename vtype::reg_t temp = vtype::cast_from(
+    //     _mm256_permutevar8x32_epi32(vtype::cast_to(reg), perm));
     
-    if constexpr (masked) {
-        const __m256i &left = _mm256_loadu_si256(
-            (const __m256i *)avx2_compressstore_lut64_left[shortMask].data());
+    // if constexpr (masked) {
+    //     const __m256i &left = _mm256_loadu_si256(
+    //         (const __m256i *)avx2_compressstore_lut64_left[shortMask].data());
 
-        vtype::mask_storeu(leftStore, left, temp);
-        vtype::mask_storeu(rightStore, _mm256_xor_si256(oxff, left), temp);
-    } else {
-        vtype::storeu(leftStore, temp);
-        vtype::storeu(rightStore, temp);
+    //     vtype::mask_storeu(leftStore, left, temp);
+    //     vtype::mask_storeu(rightStore, _mm256_xor_si256(oxff, left), temp);
+    // } else {
+    //     vtype::storeu(leftStore, temp);
+    //     vtype::storeu(rightStore, temp);
+    // }
+    if (shortMask == 0) return 0;
+
+    T scratch[4];
+    std::copy(leftStore, leftStore+4, scratch);
+    int rgt = 3;
+    int lft = 0;
+    printm(scratch, "scratch:");
+    uint32_t msk = shortMask;
+    
+    for (int i=0; i <4; i++) {
+        std::bitset<8> xx(msk);
+        
+        uint bit = msk & 1;
+        std::cout << "msk=" << xx << "; bit=" << bit << std::endl;
+        if(bit == 1) {
+            leftStore[rgt--] = scratch[i];
+        }
+        else {
+            leftStore[lft++] = scratch[i];
+        }
+        msk = msk >> 1;
     }
-
+    std::copy(leftStore, leftStore+4, rightStore);
+    
+    printm(leftStore, "******* \n leftStore:After>");
+    printm(rightStore, "rightStore:After>");
+    
+    std::cout << "**** hello partition = " << _mm_popcnt_u32(shortMask) << std::endl;
     return _mm_popcnt_u32(shortMask);
 }
+
+
 
 template <typename T>
 typename avx2_vector<T>::reg_t avx2_emu_max(typename avx2_vector<T>::reg_t x,

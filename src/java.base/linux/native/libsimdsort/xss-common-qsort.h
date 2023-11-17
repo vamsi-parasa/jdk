@@ -709,12 +709,18 @@ X86_SIMD_SORT_INLINE void insertion_sort(T *arr, int32_t from_index, int32_t to_
 template <typename vtype, typename T>
 X86_SIMD_SORT_INLINE void simd_fast_sort(T *arr, arrsize_t from_index, arrsize_t to_index, const arrsize_t INS_SORT_THRESHOLD)
 {
-    arrsize_t arrsize = to_index - from_index;
+     arrsize_t arrsize = to_index - from_index;
     if (arrsize <= INS_SORT_THRESHOLD) {
         insertion_sort<T>(arr, from_index, to_index);
     } else {
         qsort_<vtype, T>(arr, from_index, to_index - 1, 2 * (arrsize_t)log2(arrsize));
     }
+}
+
+template <typename vtype, typename T>
+X86_SIMD_SORT_INLINE void simd_partition(T *arr, int64_t from_index, int64_t to_index, T pivot)
+{
+    vectorized_partition<vtype, T>(arr, from_index, to_index, pivot, false);
 }
 
 #define DEFINE_METHODS(ISA, VTYPE) \
@@ -725,6 +731,12 @@ X86_SIMD_SORT_INLINE void simd_fast_sort(T *arr, arrsize_t from_index, arrsize_t
         simd_fast_sort<VTYPE, T>(arr, from_index, to_index, INS_SORT_THRESHOLD); \
     } \
     template <typename T> \
+    X86_SIMD_SORT_INLINE int64_t ISA##_partition( \
+            T *arr, int64_t from_index, int64_t to_index, T pivot) \
+    { \
+        return vectorized_partition<VTYPE, T>(arr, from_index, to_index, pivot, false);\
+    }\
+    template <typename T> \
     X86_SIMD_SORT_INLINE void ISA##_fast_partition( \
             T *arr, int64_t from_index, int64_t to_index, int32_t *pivot_indices, int64_t index_pivot1, int64_t index_pivot2) \
     { \
@@ -732,6 +744,6 @@ X86_SIMD_SORT_INLINE void simd_fast_sort(T *arr, arrsize_t from_index, arrsize_t
     }
 
 DEFINE_METHODS(avx2, avx2_vector<T>)
-DEFINE_METHODS(avx512, zmm_vector<T>)
+//DEFINE_METHODS(avx512, zmm_vector<T>)
 
 #endif  // XSS_COMMON_QSORT

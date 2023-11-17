@@ -272,38 +272,91 @@ int avx2_double_compressstore32(void *left_addr, void *right_addr,
 //     std::cout << "}" << std::endl;
 // }
 
+/*
 template <typename T, bool masked = true>
 int32_t avx2_double_compressstore64(void *left_addr, void *right_addr,
                                     typename avx2_vector<T>::opmask_t k,
                                     typename avx2_vector<T>::reg_t reg) {
-    // using vtype = avx2_vector<T>;
-    // const __m256i oxff = _mm256_set1_epi32(0xFFFFFFFF);
+    using vtype = avx2_vector<T>;
+    const __m256i oxff = _mm256_set1_epi32(0xFFFFFFFF);
 
-    // T *leftStore = (T *)left_addr;
-    // T *rightStore = (T *)right_addr;
+    T *leftStore = (T *)left_addr;
+    T *rightStore = (T *)right_addr;
 
     int32_t shortMask = convert_avx2_mask_to_int_64bit(k);
-    // std::bitset<8> x(shortMask);
-    // std::cout << "; mask = " << shortMask << " (" << x << std::endl;
-    // printm(leftStore, "%%%%%%%% \n leftStore:Before>");
-    // printm(rightStore, "rightStore:Before>");
+    //_mm256_permute4x64_epi64
 
-    // const __m256i &perm = _mm256_loadu_si256(
-    //     (const __m256i *)avx2_compressstore_lut64_perm[shortMask].data());
+    const __m256i &perm = _mm256_loadu_si256(
+        (const __m256i *)avx2_compressstore_lut64_perm[shortMask].data());
 
-    // typename vtype::reg_t temp = vtype::cast_from(
-    //     _mm256_permutevar8x32_epi32(vtype::cast_to(reg), perm));
+    typename vtype::reg_t temp = vtype::cast_from(
+        _mm256_permutevar8x32_epi32(vtype::cast_to(reg), perm));
     
-    // if constexpr (masked) {
-    //     const __m256i &left = _mm256_loadu_si256(
-    //         (const __m256i *)avx2_compressstore_lut64_left[shortMask].data());
+    if constexpr (masked) {
+        const __m256i &left = _mm256_loadu_si256(
+            (const __m256i *)avx2_compressstore_lut64_left[shortMask].data());
 
-    //     vtype::mask_storeu(leftStore, left, temp);
-    //     vtype::mask_storeu(rightStore, _mm256_xor_si256(oxff, left), temp);
-    // } else {
-    //     vtype::storeu(leftStore, temp);
-    //     vtype::storeu(rightStore, temp);
-    // }
+        vtype::mask_storeu(leftStore, left, temp);
+        vtype::mask_storeu(rightStore, _mm256_xor_si256(oxff, left), temp);
+    } else {
+        vtype::storeu(leftStore, temp);
+        vtype::storeu(rightStore, temp);
+    }
+    
+    return _mm_popcnt_u32(shortMask);
+} */
+
+template <typename T>
+X86_SIMD_SORT_INLINE void swap(T* a, T* b, int64_t i, int64_t j) {
+    T temp = a[i];
+    a[i] = a[j];
+    a[j] = temp;
+    temp = b[i];
+    b[i] = b[j];
+    b[j] = temp;
+}
+
+template <typename T, bool masked = true>
+int32_t avx2_double_compressstore64(void *left_addr, void *right_addr,
+                                    typename avx2_vector<T>::opmask_t k,
+                                    typename avx2_vector<T>::reg_t reg) {
+    using vtype = avx2_vector<T>;
+    int32_t shortMask = convert_avx2_mask_to_int_64bit(k);
+    T *ls = (T *)left_addr;
+    T *rs = (T *)right_addr;
+
+    int32_t popcnt = 0;
+    switch (shortMask & 0xFF)
+    {
+        case 0b0000: return 0;
+        case 0b0001: {swap(ls, rs, 0, 3); popcnt = 1; break; }
+        case 0b0010: {swap(ls, rs, 1, 3); popcnt = 1; break;}
+        case 0b0011: {swap(ls, rs, 0, 3); swap(ls, rs, 1, 2); popcnt = 2; break;} // TODO: rotate?
+        case 0b0100: {swap(ls, rs, 2, 3); popcnt = 1; break;}
+        case 0b0101: {swap(ls, rs, 0, 3); popcnt = 2; break;}
+        case 0b0110: {swap(ls, rs, 1, 3); popcnt = 2; break;}
+        case 0b0111: {swap(ls, rs, 0, 3); popcnt = 3; break;}
+        case 0b1000: return 1;
+        case 0b1001: {swap(ls, rs, 0, 2); popcnt = 2; break;}
+        case 0b1010: {swap(ls, rs, 1, 2); popcnt = 2; break;}
+        case 0b1011: {swap(ls, rs, 0, 2); popcnt = 3; break;}
+        case 0b1100: return 2;
+        case 0b1101: {swap(ls, rs, 0, 1); popcnt = 3; break;}
+        case 0b1110: return 3;
+        case 0b1111: return 4;
+
+    }
+    //std::copy(ls, ls + 4, rs);
+    return popcnt;
+}
+
+
+template <typename T, bool masked = true>
+int32_t avx2_double_compressstore64_scalar_naive(void *left_addr, void *right_addr,
+                                    typename avx2_vector<T>::opmask_t k,
+                                    typename avx2_vector<T>::reg_t reg) {
+    using vtype = avx2_vector<T>;
+    int32_t shortMask = convert_avx2_mask_to_int_64bit(k);
     if (shortMask == 0) return 0;
     T *leftStore = (T *)left_addr;
     T *rightStore = (T *)right_addr;
@@ -314,6 +367,10 @@ int32_t avx2_double_compressstore64(void *left_addr, void *right_addr,
     int rgt = num_lanes;
     int lft = 0;
     //printm(scratch, "scratch:");
+    // std::bitset<8> x(shortMask);
+    // std::cout << "; mask = " << shortMask << " (" << x << std::endl;
+    // printm(leftStore, "%%%%%%%% \n leftStore:Before>");
+    // printm(rightStore, "rightStore:Before>");
     uint32_t msk = shortMask;
     
     for (int i = 0; i < num_lanes; i++) {
@@ -334,7 +391,10 @@ int32_t avx2_double_compressstore64(void *left_addr, void *right_addr,
     // printm(leftStore, "******* \n leftStore:After>");
     // printm(rightStore, "rightStore:After>");
     // std::cout << "**** hello partition = " << _mm_popcnt_u32(shortMask) << std::endl;
+    
     return _mm_popcnt_u32(shortMask);
+
+
 }
 
 

@@ -27,6 +27,7 @@
 
 #ifndef XSS_COMMON_QSORT
 #define XSS_COMMON_QSORT
+#include <iostream>
 
 /*
  * Quicksort using AVX-512. The ideas and code are based on these two research
@@ -429,9 +430,205 @@ static int64_t vectorized_partition(type_t *arr, int64_t from_index, int64_t to_
     return pivot_index;
 }
 
+//int64_t from_index, int64_t to_index, int32_t *pivot_indices, int64_t index_pivot1, int64_t index_pivot2
+template <typename T>
+static void partitionDualPivot(T *a, int64_t low, int64_t high, int32_t *pivot_indices, int64_t pivotIndex1, int64_t pivotIndex2)
+{
+    int end = high - 1;
+    int lower = low;
+    int upper = end;
+
+    int e1 = pivotIndex1;
+    int e5 = pivotIndex2;
+    T pivot1 = a[e1];
+    T pivot2 = a[e5];
+
+    /*
+     * The first and the last elements to be sorted are moved
+     * to the locations formerly occupied by the pivots. When
+     * partitioning is completed, the pivots are swapped back
+     * into their final positions, and excluded from the next
+     * subsequent sorting.
+     */
+    a[e1] = a[lower];
+    a[e5] = a[upper];
+
+    /*
+     * Skip elements, which are less or greater than the pivots.
+     */
+    while (a[++lower] < pivot1)
+        ;
+    while (a[--upper] > pivot2)
+        ;
+
+    /*
+     * Backward 3-interval partitioning
+     *
+     *   left part                 central part          right part
+     * +------------------------------------------------------------+
+     * |  < pivot1  |   ?   |  pivot1 <= && <= pivot2  |  > pivot2  |
+     * +------------------------------------------------------------+
+     *             ^       ^                            ^
+     *             |       |                            |
+     *           lower     k                          upper
+     *
+     * Invariants:
+     *
+     *              all in (low, lower] < pivot1
+     *    pivot1 <= all in (k, upper)  <= pivot2
+     *              all in [upper, end) > pivot2
+     *
+     * Pointer k is the last index of ?-part
+     */
+    for (int unused = --lower, k = ++upper; --k > lower;)
+    {
+        T ak = a[k];
+
+        if (ak < pivot1)
+        { // Move a[k] to the left side
+            while (lower < k)
+            {
+                if (a[++lower] >= pivot1)
+                {
+                    if (a[lower] > pivot2)
+                    {
+                        a[k] = a[--upper];
+                        a[upper] = a[lower];
+                    }
+                    else
+                    {
+                        a[k] = a[lower];
+                    }
+                    a[lower] = ak;
+                    break;
+                }
+            }
+        }
+        else if (ak > pivot2)
+        { // Move a[k] to the right side
+            a[k] = a[--upper];
+            a[upper] = ak;
+        }
+    }
+
+    /*
+     * Swap the pivots into their final positions.
+     */
+    a[low] = a[lower];
+    a[lower] = pivot1;
+    a[end] = a[upper];
+    a[upper] = pivot2;
+
+   pivot_indices[0] = lower;
+   pivot_indices[1] = upper;
+}
+
+template <typename T>
+static void partitionSinglePivot(T *a, int64_t low, int64_t high, int32_t *pivot_indices, int64_t pivotIndex1)
+{
+
+    int end = high - 1;
+    int lower = low;
+    int upper = end;
+
+    int e3 = pivotIndex1;
+    T pivot = a[e3];
+
+    /*
+     * The first element to be sorted is moved to the
+     * location formerly occupied by the pivot. After
+     * completion of partitioning the pivot is swapped
+     * back into its final position, and excluded from
+     * the next subsequent sorting.
+     */
+    a[e3] = a[lower];
+
+    /*
+     * Traditional 3-way (Dutch National Flag) partitioning
+     *
+     *   left part                 central part    right part
+     * +------------------------------------------------------+
+     * |   < pivot   |     ?     |   == pivot   |   > pivot   |
+     * +------------------------------------------------------+
+     *              ^           ^                ^
+     *              |           |                |
+     *            lower         k              upper
+     *
+     * Invariants:
+     *
+     *   all in (low, lower] < pivot
+     *   all in (k, upper)  == pivot
+     *   all in [upper, end] > pivot
+     *
+     * Pointer k is the last index of ?-part
+     */
+    for (int k = ++upper; --k > lower;)
+    {
+        T ak = a[k];
+
+        if (ak != pivot)
+        {
+            a[k] = pivot;
+
+            if (ak < pivot)
+            { // Move a[k] to the left side
+                while (a[++lower] < pivot)
+                    ;
+
+                if (a[lower] > pivot)
+                {
+                    a[--upper] = a[lower];
+                }
+                a[lower] = ak;
+            }
+            else
+            { // ak > pivot - Move a[k] to the right side
+                a[--upper] = ak;
+            }
+        }
+    }
+
+    /*
+     * Swap the pivot into its final position.
+     */
+    a[low] = a[lower];
+    a[lower] = pivot;
+    pivot_indices[0] = lower;
+    pivot_indices[1] = upper;
+}
+
+template <typename T>
+X86_SIMD_SORT_INLINE bool is_mostly_sorted(T *arr, int64_t from_index, int64_t to_index) {
+    int count = 0;
+    float threshold = 0.5;
+    int64_t idx = from_index;
+    int64_t end = to_index - 1;
+    int64_t size = (to_index - from_index);
+    if (size <= 2000) return true;
+    int64_t sample_size = 50;
+    int64_t num_samples = 20;
+    int64_t stride = size/num_samples;
+    for (int64_t i = 0; i < num_samples && idx < end; i++) {
+        idx = from_index + (i * stride);
+        for (int64_t j = 0; j < sample_size && idx < end; j++) {
+            if (arr[idx] < arr[idx + 1]) count++;
+            idx++;
+        }
+    }
+        
+    float frac = (float) count/ (float) (num_samples * sample_size);
+    auto ans = frac > threshold ? true : false;
+    //std::cerr << "Mostly sorted?" << ans << std::endl;
+    return ans;
+}
+
 // partitioning functions
 template <typename vtype, typename T>
 X86_SIMD_SORT_INLINE void simd_dual_pivot_partition(T *arr, int64_t from_index, int64_t to_index, int32_t *pivot_indices, int64_t index_pivot1, int64_t index_pivot2){
+
+    
+    if (is_mostly_sorted(arr, from_index, to_index)) return partitionDualPivot(arr, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
+
     const T pivot1 = arr[index_pivot1];
     const T pivot2 = arr[index_pivot2];
 
@@ -466,6 +663,9 @@ X86_SIMD_SORT_INLINE void simd_dual_pivot_partition(T *arr, int64_t from_index, 
 
 template <typename vtype, typename T>
 X86_SIMD_SORT_INLINE void simd_single_pivot_partition(T *arr, int64_t from_index, int64_t to_index, int32_t *pivot_indices, int64_t index_pivot) {
+    
+    if (is_mostly_sorted(arr, from_index, to_index)) return partitionSinglePivot(arr, from_index, to_index, pivot_indices, index_pivot);
+
     const T pivot = arr[index_pivot];
 
     const int64_t low = from_index;

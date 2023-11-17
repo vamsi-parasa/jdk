@@ -30,6 +30,7 @@
 
 #include <array>
 #include <utility>
+#include <cstdlib>
 
 #include "xss-common-qsort.h"
 
@@ -279,7 +280,7 @@ int32_t avx2_double_compressstore64(void *left_addr, void *right_addr,
 
     typename vtype::reg_t temp = vtype::cast_from(
         _mm256_permutevar8x32_epi32(vtype::cast_to(reg), perm));
-
+    
     if constexpr (masked) {
         const __m256i &left = _mm256_loadu_si256(
             (const __m256i *)avx2_compressstore_lut64_left[shortMask].data());
